@@ -36,26 +36,27 @@ const client = new MongoClient(uri, {
     );
 
 const verifyToken = async (req, res, next) => {
-    const authHeader = req?.headers.authorization
-    console.log('authHeader', authHeader)
-    // console.log('token', token)
-    if (!authHeader) {
-      return  res.status(401).send({ message: 'Unauthorized' })
-    }
-    const token =authHeader.split(' ')[1]
-    if (!token) {
-         return res.status(401).send({ message: 'Unauthorized' })
-    }
+  const authHeader = req?.headers?.authorization;
 
-    try {
-          const { payload } = await jwtVerify(token, JWKS)
-          console.log('payload', payload)
-          next()
-    } catch (error) {
-        return res.status(401).send({ message: 'Unauthorized' })
-    }
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
 
-}
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS);
+    // payload-এ user info রাখো যাতে পরের middleware ব্যবহার করতে পারে
+    req.user = payload;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+};
+
 
 const run = async () => {
     try {
