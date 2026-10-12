@@ -143,12 +143,29 @@ const usersCollection = db.collection("user"); // Better Auth default collection
             res.send(result)
         })
 
-        app.post('/bookings', verifyToken, async (req, res) => {
-            const bookingData = await req.body;
-            const result = await bookingsCollection.insertOne(bookingData)
-            console.log('reslt', result)
-            res.send(result)
-        })
+     app.post("/bookings", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user?.sub || req.user?.id;
+
+    // Ban check
+    if (userId) {
+      const dbUser = await usersCollection.findOne({ _id: userId });
+      if (dbUser?.banned) {
+        return res.status(403).send({
+          message: "Your account is banned. You cannot make bookings.",
+        });
+      }
+    }
+
+    const bookingData = req.body;
+    const result = await bookingsCollection.insertOne(bookingData);
+    console.log("result", result);
+    res.send(result);
+  } catch (error) {
+    console.error("BOOKING ERROR:", error);
+    res.status(500).send({ message: error.message });
+  }
+});
         app.get('/bookings/:userId',verifyToken, async (req, res) => {
             const { userId } = req.params;
             const bookings = await bookingsCollection.find({ userId: userId }).toArray();
@@ -253,6 +270,42 @@ app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
       totalDestinations,
       totalBookings,
     });
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Ban / Unban user — Admin only
+app.patch("/users/:id/ban", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { banned, banReason } = req.body; // banned: true/false
+    const result = await usersCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $set: {
+          banned: !!banned,
+          banReason: banned ? banReason || "Banned by admin" : "",
+        },
+      }
+    );
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Booking restrict / cancel — Admin only
+app.patch("/bookings/:id/status", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { status } = req.body; // "confirmed" | "cancelled" | "restricted"
+    if (!["confirmed", "cancelled", "restricted"].includes(status)) {
+      return res.status(400).send({ message: "Invalid status" });
+    }
+    const result = await bookingsCollection.updateOne(
+      { _id: new ObjectId(req.params.id) },
+      { $set: { status } }
+    );
+    res.send(result);
   } catch (error) {
     res.status(500).send({ message: error.message });
   }
