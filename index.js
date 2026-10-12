@@ -57,6 +57,31 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+const verifyAdmin = async (req, res, next) => {
+  try {
+    // Better Auth JWT payload-এ সাধারণত user id থাকে
+    // role আলাদা করে users collection থেকে নিতে হবে (নিচে দেখো)
+    const userId = req.user?.sub || req.user?.id;
+
+    if (!userId) {
+      return res.status(401).send({ message: "Unauthorized" });
+    }
+
+    const user = await usersCollection.findOne({
+      _id: userId, // Better Auth Mongo-তে _id string হয়
+    });
+
+    if (!user || user.role !== "admin") {
+      return res.status(403).send({ message: "Forbidden: Admin only" });
+    }
+
+    req.dbUser = user;
+    next();
+  } catch (error) {
+    console.error("verifyAdmin error:", error);
+    return res.status(500).send({ message: "Internal Server Error" });
+  }
+};
 
 const run = async () => {
     try {
