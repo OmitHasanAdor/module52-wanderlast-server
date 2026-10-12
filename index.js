@@ -198,6 +198,66 @@ app.delete("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
+// সব users দেখা
+app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const result = await usersCollection.find({}).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Role আপডেট
+app.patch("/users/:id/role", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { role } = req.body;
+
+    if (!["tourist", "admin"].includes(role)) {
+      return res.status(400).send({ message: "Invalid role" });
+    }
+
+    const result = await usersCollection.updateOne(
+      { _id: req.params.id },
+      { $set: { role } }
+    );
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// সব bookings
+app.get("/all-bookings", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const result = await bookingsCollection
+      .find({})
+      .sort({ _id: -1 })
+      .toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Admin stats
+app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const totalUsers = await usersCollection.countDocuments();
+    const totalDestinations = await destinationsCollection.countDocuments();
+    const totalBookings = await bookingsCollection.countDocuments();
+
+    res.send({
+      totalUsers,
+      totalDestinations,
+      totalBookings,
+    });
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
         // Connect the client to the server	(optional starting in v4.7)
         // await client.connect();
         // Send a ping to confirm a successful connection
