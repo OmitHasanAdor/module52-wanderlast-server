@@ -85,9 +85,10 @@ const verifyAdmin = async (req, res, next) => {
 
 const run = async () => {
     try {
-        const db = client.db("wanderlastdb");
-        const destinationsCollection = db.collection("destinations");
-        const bookingsCollection = db.collection("bookings");
+    const db = client.db("wanderlastdb");
+const destinationsCollection = db.collection("destinations");
+const bookingsCollection = db.collection("bookings");
+const usersCollection = db.collection("user"); // Better Auth default collection name
 
         app.get('/destination', async (req, res) => {
             const result = await destinationsCollection.find().toArray()
@@ -158,6 +159,44 @@ const run = async () => {
             const result = await bookingsCollection.deleteOne({ _id: new ObjectId(userId) });
             res.send(result);
         })
+
+        // Create destination → Admin only
+app.post("/destination", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const destinationData = req.body;
+    const result = await destinationsCollection.insertOne(destinationData);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Update destination → Admin only
+app.patch("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await destinationsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: req.body }
+    );
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Delete destination → Admin only
+app.delete("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await destinationsCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
 
         // Connect the client to the server	(optional starting in v4.7)
         // await client.connect();
