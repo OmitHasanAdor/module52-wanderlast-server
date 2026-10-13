@@ -31,64 +31,66 @@ const client = new MongoClient(uri, {
             //     res.status(401).send({ message: 'Unauthorized' })
             // }
         } */
- const JWKS = createRemoteJWKSet(
-      new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
-    );
+const JWKS = createRemoteJWKSet(
+    new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
+);
 
 const verifyToken = async (req, res, next) => {
-  const authHeader = req?.headers?.authorization;
+    const authHeader = req?.headers?.authorization;
 
-  if (!authHeader) {
-    return res.status(401).send({ message: "Unauthorized" });
-  }
-
-  const token = authHeader.split(" ")[1];
-  if (!token) {
-    return res.status(401).send({ message: "Unauthorized" });
-  }
-
-  try {
-    const { payload } = await jwtVerify(token, JWKS);
-    // payload-এ user info রাখো যাতে পরের middleware ব্যবহার করতে পারে
-    req.user = payload;
-    next();
-  } catch (error) {
-    return res.status(401).send({ message: "Unauthorized" });
-  }
-};
-
-const verifyAdmin = async (req, res, next) => {
-  try {
-    // Better Auth JWT payload-এ সাধারণত user id থাকে
-    // role আলাদা করে users collection থেকে নিতে হবে (নিচে দেখো)
-    const userId = req.user?.sub || req.user?.id;
-
-    if (!userId) {
-      return res.status(401).send({ message: "Unauthorized" });
+    if (!authHeader) {
+        return res.status(401).send({ message: "Unauthorized" });
     }
 
-    const user = await usersCollection.findOne({
-      _id: userId, // Better Auth Mongo-তে _id string হয়
-    });
-
-    if (!user || user.role !== "admin") {
-      return res.status(403).send({ message: "Forbidden: Admin only" });
+    const token = authHeader.split(" ")[1];
+    if (!token) {
+        return res.status(401).send({ message: "Unauthorized" });
     }
 
-    req.dbUser = user;
-    next();
-  } catch (error) {
-    console.error("verifyAdmin error:", error);
-    return res.status(500).send({ message: "Internal Server Error" });
-  }
+    try {
+        const { payload } = await jwtVerify(token, JWKS);
+        // payload-এ user info রাখো যাতে পরের middleware ব্যবহার করতে পারে
+        req.user = payload;
+        next();
+    } catch (error) {
+        return res.status(401).send({ message: "Unauthorized" });
+    }
 };
+
+
 
 const run = async () => {
     try {
-    const db = client.db("wanderlastdb");
-const destinationsCollection = db.collection("destinations");
-const bookingsCollection = db.collection("bookings");
-const usersCollection = db.collection("user"); // Better Auth default collection name
+        const db = client.db("wanderlastdb");
+        const destinationsCollection = db.collection("destinations");
+        const bookingsCollection = db.collection("bookings");
+        const usersCollection = db.collection("user");
+
+        const verifyAdmin = async (req, res, next) => {
+            try {
+                // Better Auth JWT payload-এ সাধারণত user id থাকে
+                // role আলাদা করে users collection থেকে নিতে হবে (নিচে দেখো)
+                const userId = req.user?.sub || req.user?.id;
+
+                if (!userId) {
+                    return res.status(401).send({ message: "Unauthorized" });
+                }
+
+                const user = await usersCollection.findOne({
+                    _id: userId, // Better Auth Mongo-তে _id string হয়
+                });
+
+                if (!user || user.role !== "admin") {
+                    return res.status(403).send({ message: "Forbidden: Admin only" });
+                }
+
+                req.dbUser = user;
+                next();
+            } catch (error) {
+                console.error("verifyAdmin error:", error);
+                return res.status(500).send({ message: "Internal Server Error" });
+            }
+        };
 
         app.get('/destination', async (req, res) => {
             const result = await destinationsCollection.find().toArray()
@@ -96,77 +98,47 @@ const usersCollection = db.collection("user"); // Better Auth default collection
             res.send(result)
         })
 
-        app.get('/destination/:id',verifyToken , async (req, res) => {
+        app.get('/destination/:id', verifyToken, async (req, res) => {
             const id = req.params.id;
-           
+
             const result = await destinationsCollection.findOne({ _id: new ObjectId(id) })
             res.send(result)
         })
 
-        app.post('/destination', async (req, res) => {
-            const destinationData = await req.body;
-            const result = await destinationsCollection.insertOne(destinationData)
-            // console.log('reslt', result)
-            res.send(result)
-        })
-        //  country, category, price, duration, departureDate, description,destinationName,imageUrl ,_id
-        app.patch('/destination/:id', async (req, res) => {
-            const id = req.params.id;
-            const filter = { _id: new ObjectId(id) };
-            const editedData = req.body
-            const result = await destinationsCollection.updateOne(
-                { _id: new ObjectId(id) },
-                { $set: editedData }
-            )
-            res.send(result)
-            // old system
-            //    const updateDocument = {
-            //    $set: {
-            //     destinationName: editedData.destinationName,
-            //     country: editedData.country,
-            //     category: editedData.category,
-            //     price: editedData.price,
-            //     duration: editedData.duration,
-            //     departureDate: editedData.departureDate,
-            //     description: editedData.description,
-            //     imageUrl: editedData.imageUrl
-            //    },
-            // };
-        })
 
-        app.delete('/destination/:id', async (req, res) => {
-            const id = req.params.id
-            const filter = {
-                _id: new ObjectId(id)
+        app.post("/bookings", verifyToken, async (req, res) => {
+            try {
+                const userId = req.user?.sub || req.user?.id;
+
+                if (!userId) {
+                    return res.status(401).send({ message: "Unauthorized" });
+                }
+
+                // Ban check
+                const dbUser = await usersCollection.findOne({ _id: userId });
+                if (dbUser?.banned) {
+                    return res.status(403).send({
+                        message: "Your account is banned. You cannot make bookings.",
+                    });
+                }
+
+                // token থেকে userId force করো + default status
+                const bookingData = {
+                    ...req.body,
+                    userId, // client-এর userId overwrite
+                    status: req.body.status || "pending",
+                    createdAt: new Date(),
+                };
+
+                const result = await bookingsCollection.insertOne(bookingData);
+                console.log("result", result);
+                res.send(result);
+            } catch (error) {
+                console.error("BOOKING ERROR:", error);
+                res.status(500).send({ message: error.message });
             }
-            const result = await destinationsCollection.deleteOne(filter)
-            res.send(result)
-        })
-
-     app.post("/bookings", verifyToken, async (req, res) => {
-  try {
-    const userId = req.user?.sub || req.user?.id;
-
-    // Ban check
-    if (userId) {
-      const dbUser = await usersCollection.findOne({ _id: userId });
-      if (dbUser?.banned) {
-        return res.status(403).send({
-          message: "Your account is banned. You cannot make bookings.",
         });
-      }
-    }
-
-    const bookingData = req.body;
-    const result = await bookingsCollection.insertOne(bookingData);
-    console.log("result", result);
-    res.send(result);
-  } catch (error) {
-    console.error("BOOKING ERROR:", error);
-    res.status(500).send({ message: error.message });
-  }
-});
-        app.get('/bookings/:userId',verifyToken, async (req, res) => {
+        app.get('/bookings/:userId', verifyToken, async (req, res) => {
             const { userId } = req.params;
             const bookings = await bookingsCollection.find({ userId: userId }).toArray();
             res.send(bookings);
@@ -178,138 +150,120 @@ const usersCollection = db.collection("user"); // Better Auth default collection
         })
 
         // Create destination → Admin only
-app.post("/destination", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const destinationData = req.body;
-    const result = await destinationsCollection.insertOne(destinationData);
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+        app.post("/destination", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const destinationData = req.body;
+                const result = await destinationsCollection.insertOne(destinationData);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-// Update destination → Admin only
-app.patch("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const result = await destinationsCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: req.body }
-    );
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+        // Update destination → Admin only
+        app.patch("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const result = await destinationsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: req.body }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-// Delete destination → Admin only
-app.delete("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const result = await destinationsCollection.deleteOne({
-      _id: new ObjectId(id),
-    });
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+        // Delete destination → Admin only
+        app.delete("/destination/:id", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const result = await destinationsCollection.deleteOne({
+                    _id: new ObjectId(id),
+                });
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-// সব users দেখা
-app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const result = await usersCollection.find({}).toArray();
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+        // সব users দেখা
+        app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await usersCollection.find({}).toArray();
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-// Role আপডেট
-app.patch("/users/:id/role", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const { role } = req.body;
 
-    if (!["tourist", "admin"].includes(role)) {
-      return res.status(400).send({ message: "Invalid role" });
-    }
 
-    const result = await usersCollection.updateOne(
-      { _id: req.params.id },
-      { $set: { role } }
-    );
+        // সব bookings
+        app.get("/all-bookings", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const result = await bookingsCollection
+                    .find({})
+                    .sort({ _id: -1 })
+                    .toArray();
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+        // Admin stats
+        app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const totalUsers = await usersCollection.countDocuments();
+                const totalDestinations = await destinationsCollection.countDocuments();
+                const totalBookings = await bookingsCollection.countDocuments();
 
-// সব bookings
-app.get("/all-bookings", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const result = await bookingsCollection
-      .find({})
-      .sort({ _id: -1 })
-      .toArray();
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+                res.send({
+                    totalUsers,
+                    totalDestinations,
+                    totalBookings,
+                });
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-// Admin stats
-app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const totalUsers = await usersCollection.countDocuments();
-    const totalDestinations = await destinationsCollection.countDocuments();
-    const totalBookings = await bookingsCollection.countDocuments();
+        // Ban / Unban user — Admin only
+        app.patch("/users/:id/ban", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const { banned, banReason } = req.body;
+                const result = await usersCollection.updateOne(
+                    { _id: req.params.id },
+                    {
+                        $set: {
+                            banned: !!banned,
+                            banReason: banned ? banReason || "Banned by admin" : "",
+                        },
+                    }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
-    res.send({
-      totalUsers,
-      totalDestinations,
-      totalBookings,
-    });
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
-
-// Ban / Unban user — Admin only
-app.patch("/users/:id/ban", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const { banned, banReason } = req.body; // banned: true/false
-    const result = await usersCollection.updateOne(
-      { _id: req.params.id },
-      {
-        $set: {
-          banned: !!banned,
-          banReason: banned ? banReason || "Banned by admin" : "",
-        },
-      }
-    );
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
-
-// Booking restrict / cancel — Admin only
-app.patch("/bookings/:id/status", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const { status } = req.body; // "confirmed" | "cancelled" | "restricted"
-    if (!["confirmed", "cancelled", "restricted"].includes(status)) {
-      return res.status(400).send({ message: "Invalid status" });
-    }
-    const result = await bookingsCollection.updateOne(
-      { _id: new ObjectId(req.params.id) },
-      { $set: { status } }
-    );
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
-});
+        // Booking restrict / cancel — Admin only
+        app.patch("/bookings/:id/status", verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const { status } = req.body; // "confirmed" | "cancelled" | "restricted"
+                if (!["pending", "confirmed", "cancelled", "restricted"].includes(status)) {
+                    return res.status(400).send({ message: "Invalid status" });
+                }
+                const result = await bookingsCollection.updateOne(
+                    { _id: new ObjectId(req.params.id) },
+                    { $set: { status } }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
 
         // Connect the client to the server	(optional starting in v4.7)
         // await client.connect();
