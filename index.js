@@ -69,7 +69,6 @@ const run = async () => {
         const verifyAdmin = async (req, res, next) => {
             try {
                 // Better Auth JWT payload-এ সাধারণত user id থাকে
-                // role আলাদা করে users collection থেকে নিতে হবে (নিচে দেখো)
                 const userId = req.user?.sub || req.user?.id;
 
                 if (!userId) {
@@ -100,7 +99,6 @@ const run = async () => {
 
         app.get('/destination/:id', verifyToken, async (req, res) => {
             const id = req.params.id;
-
             const result = await destinationsCollection.findOne({ _id: new ObjectId(id) })
             res.send(result)
         })
@@ -113,7 +111,6 @@ const run = async () => {
                 if (!userId) {
                     return res.status(401).send({ message: "Unauthorized" });
                 }
-
                 // Ban check
                 const dbUser = await usersCollection.findOne({ _id: userId });
                 if (dbUser?.banned) {
@@ -271,7 +268,6 @@ const run = async () => {
         // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
-        // Ensures that the client will close when you finish/error
         // await client.close();
     }
 }
